@@ -1,0 +1,24 @@
+name: build-efi
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y build-essential gnu-efi binutils
+      - name: Build BOOTAA64.EFI
+        run: |
+          CRT0=$(find /usr/lib /usr/lib64 -name 'crt0-efi-aarch64.o' | head -1)
+          LDS=$(find /usr/lib /usr/lib64 -name 'elf_aarch64_efi.lds' | head -1)
+          EFIINC=$(dirname "$(find /usr/include -name efi.h -path '*efi*' | head -1)")
+          gcc -I"$EFIINC" -I"$EFIINC/aarch64" -I"$EFIINC/protocol" \
+              -fno-stack-protector -fpic -fshort-wchar -ffreestanding -Wall \
+              -c hello.c -o hello.o
+          ld -nostdlib -znocombreloc -T "$LDS" -shared -Bsymbolic \
+             -L "$(dirname "$CRT0")" "$CRT0" hello.o -o hello.so -lefi -lgnuefi
+          objcopy -j .text -j .sdata -j .data -j .dynamic -j .rela -j .rel -j .reloc \
+                  -O binary hello.so BOOTAA64.EFI
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BOOTAA64-unsigned
+          path: BOOTAA64.EFI
